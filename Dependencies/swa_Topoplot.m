@@ -6,11 +6,13 @@ NumContours         = 12;
 
 PlotContour         = 1;            % Determines whether the contour lines are drawn
 PlotSurface         = 0;            % Determines whether the surface is drawn
-PlotHead            = 1;            % Determines whether the head is drawn 
+PlotHead            = 1;            % Determines whether the head is drawn
 PlotChannels        = 1;            % Determines whether the channels are drawn
 PlotStreams         = 1;
 
 Streams             = [];
+streamWidth         = 50;           % thickness of the streamlines (higher the thinner)
+streamColor         = 'w';
 
 HeadWidth           = 2.5;
 HeadColor           = [0,0,0];
@@ -30,12 +32,12 @@ if nargin > 2
       error('Flag arguments must be strings')
     end
     Param = lower(Param);
-    
+
     switch Param
         case 'headwidth'
             HeadWidth           = Value;
         case 'numcontours'
-            NumContours         = Value;    
+            NumContours         = Value;
         case 'newfigure'
             NewFigure           = Value;
         case 'axes'
@@ -59,7 +61,13 @@ if nargin > 2
         case 'gs'
             GS                  = Value;
         case 'data'
-            Data   = Value;
+            Data = Value;
+        case 'streamwidth'
+            streamWidth = Value;
+        case 'streamcolor'
+            streamColor = Value;
+        case 'colorlimits'
+            colorlimits         = Value;
         otherwise
             display (['Unknown parameter setting: ' Param])
     end
@@ -90,11 +98,11 @@ end
 
 %% If there is no delay map, or if the involvement map is being plotted...
 if isempty(DelayMap)
-    
+
     % Create the plotting mesh
     XYrange = linspace(1, GS, GS);
     XYmesh  = XYrange(ones(GS,1),:);
-    
+
     % Check Matlab version for interpolant...
     if exist('scatteredInterpolant', 'file')
         % If its available use the newest function
@@ -105,7 +113,7 @@ if isempty(DelayMap)
         F = TriScatteredInterp(xloc,yloc, Data(:), 'natural');
         ver = 1;
     end
-    
+
     DelayMap = F(XYmesh, XYmesh')'; % Delay map (with zeros)
 end
 
@@ -123,13 +131,12 @@ if isempty(get(0,'children')) || NewFigure == 1
     set(H.Figure,...
     'Color',            'w'                 );
     H.CurrentAxes = axes('Position',[0 0 1 1]);
-    colormap(flipud(hot))
 elseif Axes ~= 0
     H.CurrentAxes = Axes;
 else
     H.CurrentAxes = gca;
 end
-% 
+%
 % Prepare the axes
 set(H.CurrentAxes,...
     'XLim',             [1, GS]     ,...
@@ -148,10 +155,17 @@ if PlotSurface == 1
         'FaceColor',        'interp'            ,...
         'HitTest',          'off'               );
 end
-%% Plot the contour map
+
+% If the user specified limits for the Z axis, use those.
+if exist('colorlimits', 'var')
+  caxis(H.CurrentAxes, colorlimits);
+end
+
 % Adjust the contour lines to account for the minimum and maximum difference in values
 LevelList   = linspace(min(DelayMap(:)), max(DelayMap(:)), NumContours);
 
+
+%% Plot the contour map
 if PlotContour == 1
     [~,H.Contour] = contourf(H.CurrentAxes, XYmesh,XYmesh',DelayMap');
     set(H.Contour,...
@@ -162,19 +176,19 @@ end
 
 %% Prepare the Head, Ears, and Nose (thanks EEGLAB!)
 if PlotHead == 1;
-    
+
     r = GS/2.5;
     center = GS/2;
-    
+
     % Head
-    ang     = 0:0.01:2*pi; 
+    ang     = 0:0.01:2*pi;
     xp      = center+(r*cos(ang));
     yp      = center+(r*sin(ang));
 
     % Nose...
     base    = 0.4954;
     basex   = 0.0900;                 % nose width
-    tip     = 0.5750; 
+    tip     = 0.5750;
     tiphw   = 0.02;                   % nose tip half width
     tipr    = 0.005;                  % nose tip rounding
 
@@ -187,7 +201,7 @@ if PlotHead == 1;
     H.Head(1) = plot(H.CurrentAxes, xp, yp);
     H.Head(2) = plot(H.CurrentAxes,...
              center+r*2*[basex;tiphw;0;-tiphw;-basex],center+r*2*[base;tip-tipr;tip;tip-tipr;base]);
-    
+
     H.Head(3) = plot(H.CurrentAxes,...
                     center+r*2*EarX,center+r*2*EarY);% plot left ear
     H.Head(4) = plot(H.CurrentAxes,...
@@ -202,21 +216,21 @@ end
 
 %% Plot All Channels
 if PlotChannels == 1;
-    
+
     labels    = {e_loc.labels};
     for i = 1:size(labels,2)
         H.Channels(i) = text(xloc(i),yloc(i), '.'         ,...
             'userdata',         char(labels(i))         ,...
             'Parent',           H.CurrentAxes           );
     end
-    
+
     set(H.Channels                              ,...
         'HorizontalAlignment',  'center'        ,...
         'VerticalAlignment',    'middle'        ,...
         'Color',                'k'             ,...
         'FontSize',             10              ,...
         'FontWeight',           'bold'          );
-    
+
     set(H.Channels                              ,...
         'buttondownfcn', ...
 	    ['tmpstr = get(gco, ''userdata'');'     ...
@@ -226,29 +240,28 @@ end
 
 %% Plot Streamlines
 if PlotStreams == 1;
-    
+
     for i = 1:length(Streams)
         if ~isempty(Streams{i})
-            pad = linspace(0,GS/50,length(Streams{i}));
+            pad = linspace(0, GS/streamWidth, length(Streams{i}));
             yp  = [Streams{i}(1,:)-pad, fliplr(Streams{i}(1,:)+pad)];
             xp  = [Streams{i}(2,:)+pad, fliplr(Streams{i}(2,:)-pad)];
             H.PStream(i) = patch(xp,yp,'w', 'Parent', H.CurrentAxes);
         end
     end
     if isfield (H, 'PStream')
-        % this throws a java exception in dual monitor settings
         % TODO: fix the java exception when setting the alpha value
 %         set(H.PStream(H.PStream > 0),...
-%             'facealpha',    0.3);
-        set(H.PStream(H.PStream > 0),...
-            'linewidth',    2,...
-            'edgecolor',    'w',...
-            'facecolor',    'b');
+        set(H.PStream,...
+            'linewidth',    1,...
+            'edgecolor',    'k',...
+            'facealpha',    0.3,...
+            'facecolor',    streamColor);
     end
 end
 
 % Adjustments
-axes(H.CurrentAxes)
-axis square
-axis off
-
+% square axes
+set(H.CurrentAxes, 'PlotBoxAspectRatio', [1, 1, 1]);
+% hide the axes
+set(H.CurrentAxes, 'visible', 'off');

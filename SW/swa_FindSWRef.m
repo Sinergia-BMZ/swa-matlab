@@ -37,75 +37,72 @@ else
     SWCount  = length(SW);
 end
 
+% number of reference waves
+number_ref_waves = size(Data.SWRef,1);
+
+% initialise loop variables
+switch Info.Parameters.Ref_AmplitudeCriteria
+    case 'relative'
+        Info.Parameters.Ref_AmplitudeAbsolute = zeros(number_ref_waves, 1);
+    case 'absolute'
+        Info.Parameters.Ref_AmplitudeRelative = zeros(number_ref_waves, 1);
+end
+Info.Recording.Data_Deviation = zeros(number_ref_waves, 1);
+
+% check for sufficient absolute thresholds for multi-references
+if strcmp(Info.Parameters.Ref_AmplitudeCriteria, 'absolute')
+    if length(Info.Parameters.Ref_AmplitudeAbsolute) < number_ref_waves
+        Info.Parameters.Ref_AmplitudeAbsolute = repmat(Info.Parameters.Ref_AmplitudeAbsolute(1), [number_ref_waves, 1]);
+    end
+end
+
+
 % loop for each reference
-for refWave = 1:size(Data.SWRef,1)
+for ref_wave = 1:number_ref_waves
 
     % keep track of previous wave count
-    if refWave > 1
+    if ref_wave > 1
         OSWCount = length(SW);
     end
 
     % calculate the slope of the data
-    slopeData   = [0 diff(Data.SWRef(refWave, :))];
-    % find all the negative peaks
-    % when slope goes from negative to a positive
-    MNP  = find(diff(sign(slopeData)) == 2);
-    % Find all the positive peaks
-    MPP  = find(diff(sign(slopeData)) == -2);
+    slopeData   = [0 diff(Data.SWRef(ref_wave, :))];
     
-    % Check for earlier MPP than MNP
-    if MNP(1) < MPP(1)
-        MNP(1) = [];
-    end
-    % Check that last MNP has a later MPP
-    if MNP(end) > MPP(end)
-        MNP(end)=[];
-    end
+    % get the local minima and maxima (and eliminate small notches)
+    [MNP, MPP] = swa_get_peaks(slopeData, Info, 1);
     
     % calculate amplitude threshold criteria
     % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    if ~isempty(Info.Parameters.Ref_AmpStd)
-        % absolute deviation from the median (to avoid outliers)
-        StdMor = mad(Data.SWRef(refWave, MNP), 1);
-        % calculate new threshold
-        Info.Parameters.Ref_NegAmpMin = ...
-            (StdMor * Info.Parameters.Ref_AmpStd)...
-            + abs(median(Data.SWRef(refWave, MNP)));
-        fprintf(1, 'Calculation: Amplitude threshold set to %.1fuV\n', Info.Parameters.Ref_NegAmpMin);
-    else
-        % absolute deviation from the median (to avoid outliers)
-        StdMor = mad(Data.SWRef(refWave, MNP), 1);
-        % calculate deviations from mean activity
-        temp_deviation =  (Info.Parameters.Ref_NegAmpMin...
-            - abs(median(Data.SWRef(refWave, MNP)))) / StdMor;
-        fprintf(1, 'Information: Threshold is %.1f deviations from median activity \n', temp_deviation);
+    % absolute deviation from the median (to avoid outliers)
+    Info.Recording.Data_Deviation(ref_wave) = mad(Data.SWRef(ref_wave, MNP), 1);
+    
+    switch Info.Parameters.Ref_AmplitudeCriteria
+        case 'relative'
+            % calculate new threshold
+            Info.Parameters.Ref_AmplitudeAbsolute(ref_wave) = ...
+                (Info.Recording.Data_Deviation(ref_wave) * Info.Parameters.Ref_AmplitudeRelative)...
+                + abs(median(Data.SWRef(ref_wave, MNP)));
+            fprintf(1, 'Calculation: Amplitude threshold set to %.1fuV\n', Info.Parameters.Ref_AmplitudeAbsolute);
+            
+        case 'absolute'
+            % calculate deviations from mean activity
+            Info.Parameters.Ref_AmplitudeRelative(ref_wave) =  (Info.Parameters.Ref_AmplitudeAbsolute(ref_wave)...
+                - abs(median(Data.SWRef(ref_wave, MNP)))) / Info.Recording.Data_Deviation(ref_wave);
+            fprintf(1, 'Information: Threshold is %.1f deviations from median activity \n', Info.Parameters.Ref_AmplitudeRelative(ref_wave));
     end
     
-    % check for peak to peak criteria
+    % check for specified peak to peak criteria
+    % TODO: peak to peak set to 1.75, export parameter
     if isempty(Info.Parameters.Ref_Peak2Peak)
         Info.Parameters.Ref_Peak2Peak = ...
-            abs(Info.Parameters.Ref_NegAmpMin) * 1.75;
+            abs(Info.Parameters.Ref_AmplitudeAbsolute(ref_wave)) * 1.75;
     end
     
-    
-    switch Info.Parameters.Ref_ZCorMNP
+    % switch inspection methods
+    switch Info.Parameters.Ref_InspectionPoint
         % Peak detection method
         % ~~~~~~~~~~~~~~~~~~~~~
         case 'MNP'
-            % iteratively erase small notches
-            nb = 1;
-            while nb > 0;
-                posBumps = MPP(2:end)-MNP < Info.Parameters.Ref_WaveLength(1)*Info.Recording.sRate/10;
-                MPP([false, posBumps]) = [];
-                MNP(posBumps)     = [];
-
-                negBumps = MNP-MPP(1:end-1) < Info.Parameters.Ref_WaveLength(1)*Info.Recording.sRate/10;
-                MPP(negBumps) = [];
-                MNP(negBumps) = [];
-
-                nb = max(sum(posBumps), sum(negBumps));
-            end
-
             % Define badWaves
             badWaves = false(1, length(MNP));
 
@@ -126,14 +123,14 @@ for refWave = 1:size(Data.SWRef,1)
             % Amplitude criteria
             % ```````````````````
             % mark lower than threshold amps and larger than 220uV (artifacts)
-            badWaves    ( Data.SWRef(refWave, MNP) > -Info.Parameters.Ref_NegAmpMin...
-                | Data.SWRef(refWave, MNP) < -220)...
+            badWaves    ( Data.SWRef(ref_wave, MNP) > -Info.Parameters.Ref_AmplitudeAbsolute(ref_wave)...
+                | Data.SWRef(ref_wave, MNP) < -220)...
                 = true;
 
             % peak to peak amplitude
-            p2p = Data.SWRef(refWave, MPP(2:end)) - Data.SWRef(refWave, MNP);
+            p2p = Data.SWRef(ref_wave, MPP(2:end)) - Data.SWRef(ref_wave, MNP);
             % peaks should not be calculated for envelope references
-            if ~strcmp(Info.Parameters.Ref_Method, 'Envelope')
+            if ~strcmp(lower(Info.Parameters.Ref_Method), 'envelope')
                 badWaves ( p2p < Info.Parameters.Ref_Peak2Peak)...
                     = true;
             end
@@ -146,23 +143,23 @@ for refWave = 1:size(Data.SWRef,1)
             for n = find(~badWaves)
                 
                 % Check if the SW has already been found in another reference channel
-                if refWave > 1
+                if ref_wave > 1
                     [c, SWid] = max(double(AllPeaks > MPP(n)) + double(AllPeaks < MPP(n+1)));
                     if c == 2
                         % Check which region has the bigger P2P wave...
-                        if Data.SWRef(MNP(n)) < SW(SWid).Ref_PeakAmp
+                        if Data.SWRef(ref_wave, MNP(n)) < SW(SWid).Ref_PeakAmp
                             % If the new region does then overwrite previous data with larger reference
-                            SW(SWid).Ref_Region    = [refWave, SW(SWid).Ref_Region];
+                            SW(SWid).Ref_Region    = [ref_wave, SW(SWid).Ref_Region];
                             SW(SWid).Ref_DownInd   = MPP(n);
                             SW(SWid).Ref_PeakInd   = MNP(n);
                             SW(SWid).Ref_UpInd     = MPP(n+1);
-                            SW(SWid).Ref_PeakAmp   = Data.SWRef(MNP(n));
+                            SW(SWid).Ref_PeakAmp   = Data.SWRef(ref_wave, MNP(n));
                             SW(SWid).Ref_P2PAmp    = p2p(n);
                             SW(SWid).Ref_NegSlope  = min(slopeData(1,MPP(n):MPP(n+1)));
                             SW(SWid).Ref_PosSlope  = max(slopeData(1,MPP(n):MPP(n+1)));
                         else
                             % Just add the reference region
-                            SW(SWid).Ref_Region(end+1) = refWave;
+                            SW(SWid).Ref_Region(end+1) = ref_wave;
                         end
                         
                         continue;
@@ -173,11 +170,11 @@ for refWave = 1:size(Data.SWRef,1)
                 SWCount = SWCount+1;
                 
                 % Save the values
-                SW(SWCount).Ref_Region    = refWave;
+                SW(SWCount).Ref_Region    = ref_wave;
                 SW(SWCount).Ref_DownInd   = MPP(n);                
                 SW(SWCount).Ref_PeakInd   = MNP(n);
                 SW(SWCount).Ref_UpInd     = MPP(n+1);
-                SW(SWCount).Ref_PeakAmp   = Data.SWRef(MNP(n));
+                SW(SWCount).Ref_PeakAmp   = Data.SWRef(ref_wave, MNP(n));
                 SW(SWCount).Ref_P2PAmp    = p2p(n);
                 SW(SWCount).Ref_NegSlope  = min(slopeData(1,MPP(n):MPP(n+1)));
                 SW(SWCount).Ref_PosSlope  = max(slopeData(1,MPP(n):MPP(n+1)));
@@ -188,14 +185,14 @@ for refWave = 1:size(Data.SWRef,1)
         % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         case 'ZC'
             % Get Downward and Upward Zero Crossings (DZC and UZC)
-            signData    = sign(Data.SWRef(refWave,:));
+            signData    = sign(Data.SWRef(ref_wave,:));
                 % -2 indicates when the sign goes from 1 to -1
             DZC = find(diff(signData) == -2); 
             UZC = find(diff(signData) == 2);
             
             % Calculate xth percentile slope
             x = sort(slopeData);
-            slopeThresh = x(round(length(x)*Info.Parameters.Ref_SlopeMin));
+            slopeThresh = x(round(length(x) * Info.Parameters.Ref_SlopeMin));
             
             % Check for earlier initial UZC than DZC
             if DZC(1)>UZC(1)
@@ -216,9 +213,9 @@ for refWave = 1:size(Data.SWRef,1)
             % Get all the wavelengths
             SWLengths = UZC-DZC;
             % Too short
-            BadZC = SWLengths < Info.Parameters.Ref_WaveLength(1)*Info.Recording.sRate;
+            BadZC = SWLengths < Info.Parameters.Ref_WaveLength(1) * Info.Recording.sRate;
             % Too long
-            BadZC(  SWLengths > Info.Parameters.Ref_WaveLength(2)*Info.Recording.sRate) = true;
+            BadZC(  SWLengths > Info.Parameters.Ref_WaveLength(2) * Info.Recording.sRate) = true;
             % Eliminate the indices
             UZC(BadZC) = [];
             DZC(BadZC) = [];
@@ -231,8 +228,9 @@ for refWave = 1:size(Data.SWRef,1)
                 
                 % Test for negative amplitude
                 % ```````````````````````````````
-                [NegPeakAmp, NegPeakId] = min(Data.SWRef(1,DZC(n):UZC(n)));
-                if abs(NegPeakAmp) < Info.Parameters.Ref_NegAmpMin
+                [NegPeakAmp, NegPeakId] = min(Data.SWRef(ref_wave, DZC(n):UZC(n)));
+                if NegPeakAmp > -Info.Parameters.Ref_AmplitudeAbsolute(ref_wave) || ...
+                    NegPeakAmp < -220
                     continue;
                 end
                 NegPeakId = NegPeakId + DZC(n);
@@ -245,9 +243,9 @@ for refWave = 1:size(Data.SWRef,1)
                     sample_range = UZC(n):size(Data.SWRef, 2);
                 end
                 % calculate the positive peak after the zero crossing
-                PosPeakAmp = max(Data.SWRef(1, sample_range));
-                if strcmp(Info.Parameters.Ref_Method,'MDC')
-                    if PosPeakAmp-NegPeakAmp < Info.Parameters.Ref_Peak2Peak
+                PosPeakAmp = max(Data.SWRef(ref_wave, sample_range));
+                if strcmp(Info.Parameters.Ref_Method, 'MDC')
+                    if PosPeakAmp - NegPeakAmp < Info.Parameters.Ref_Peak2Peak
                         continue;
                     end
                 end
@@ -261,24 +259,24 @@ for refWave = 1:size(Data.SWRef,1)
                 
                 % Check if the SW has already been found in another reference channel
                 % ```````````````````````````````
-                if refWave > 1
+                if ref_wave > 1
                     [c, SWid] = max(double(AllPeaks > DZC(n)) + double(AllPeaks < UZC(n)));
                     if c == 2
                         % Check which region has the bigger P2P wave...
-                        if Data.SWRef(refWave, NegPeakId) < SW(SWid).Ref_PeakAmp
+                        if Data.SWRef(ref_wave, NegPeakId) < SW(SWid).Ref_PeakAmp
                             % If the new region does then overwrite previous data with larger reference
-                            SW(SWid).Ref_Region    = [refWave, SW(SWid).Ref_Region];
+                            SW(SWid).Ref_Region    = [ref_wave, SW(SWid).Ref_Region];
                             SW(SWid).Ref_DownInd   = DZC(n);
                             SW(SWid).Ref_PeakInd   = NegPeakId;
                             SW(SWid).Ref_UpInd     = UZC(n);
-                            SW(SWid).Ref_PeakAmp   = Data.SWRef(refWave, NegPeakId);
+                            SW(SWid).Ref_PeakAmp   = Data.SWRef(ref_wave, NegPeakId);
                             SW(SWid).Ref_P2PAmp    = PosPeakAmp-NegPeakAmp;
                             SW(SWid).Ref_NegSlope  = min(slopeData(1,DZC(n):UZC(n)));
                             SW(SWid).Ref_PosSlope  = MaxPosSlope;
                             
                         else
                             % Just add the reference region
-                            SW(SWid).Ref_Region(end+1) = refWave;
+                            SW(SWid).Ref_Region(end+1) = ref_wave;
                             
                         end
                         
@@ -290,11 +288,11 @@ for refWave = 1:size(Data.SWRef,1)
                 SWCount = SWCount+1;
                 
                 % Save the values
-                SW(SWCount).Ref_Region    = refWave;
+                SW(SWCount).Ref_Region    = ref_wave;
                 SW(SWCount).Ref_DownInd   = DZC(n);                
                 SW(SWCount).Ref_PeakInd   = NegPeakId;
                 SW(SWCount).Ref_UpInd     = UZC(n);
-                SW(SWCount).Ref_PeakAmp   = Data.SWRef(refWave, NegPeakId);
+                SW(SWCount).Ref_PeakAmp   = Data.SWRef(ref_wave, NegPeakId);
                 SW(SWCount).Ref_P2PAmp    = PosPeakAmp - NegPeakAmp;
                 SW(SWCount).Ref_NegSlope  = min(slopeData(1,DZC(n):UZC(n)));
                 SW(SWCount).Ref_PosSlope  = MaxPosSlope;
@@ -306,7 +304,7 @@ for refWave = 1:size(Data.SWRef,1)
             return;
     end
     
-    if refWave > 1
+    if ref_wave > 1
         fprintf(1, 'Information: %d slow waves added to structure \n', length(SW)-OSWCount);
     else
         fprintf(1, 'Information: %d slow waves found in data series \n', length(SW)-OSWCount);
@@ -316,3 +314,22 @@ end
 % sort the waves in temporal order
 [~, sorted_index] = sort([SW.Ref_DownInd]);
 SW = SW(sorted_index);
+
+% delete the waves found in none-specified sleep stages
+if ~isempty(Info.Parameters.Ref_UseStages) && isfield(Data, 'sleep_stages')
+   
+   % get the list of samples from exluded stages
+   excluded_samples = find(~ismember(Data.sleep_stages,  Info.Parameters.Ref_UseStages));
+   % get the list of SWs that are found in excluded stages
+   bad_waves = ismember([SW.Ref_PeakInd], excluded_samples);
+   % remove those waves
+   SW(bad_waves) = [];
+   
+   % give a message about the number removed
+   if sum(bad_waves) > 0;
+       fprintf(1, 'Information: %i waves were found in non-specified stages and removed\n', sum(bad_waves)); 
+   end
+   
+elseif ~isempty(Info.Parameters.Ref_UseStages) && ~isfield(Data, 'sleep_stages')
+    fprintf(1, 'Warning: stages were specified in parameters but no scoring information was found\n');
+end
