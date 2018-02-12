@@ -94,13 +94,25 @@ switch Info.Parameters.Channels_Detection
                 continue
             end
             % extract a small portion of the channel data around the
-
+            
             % reference peak
             shortData   = Data.Filtered(:,SW(nSW).Ref_PeakInd - win * 2 ...
-                        : SW(nSW).Ref_PeakInd + win * 2);
-            % get only the negative portion of the reference peak
-            refData     = mean(Data.SWRef(SW(nSW).Ref_Region, SW(nSW).Ref_PeakInd - win ...
-                        : SW(nSW).Ref_PeakInd + win), 1);
+                : SW(nSW).Ref_PeakInd + win * 2);
+            
+            % get canonical wave
+            % calculate mean within regions found
+            if strcmp(Info.Parameters.Channels_Correlate2, 'mean')
+                refData = mean(Data.SWRef(SW(nSW).Ref_Region, SW(nSW).Ref_PeakInd - win ...
+                    : SW(nSW).Ref_PeakInd + win), 1);
+            % only use primary canonical
+            elseif strcmp(Info.Parameters.Channels_Correlate2, 'main')
+                refData = mean(Data.SWRef(SW(nSW).Ref_Region(1), SW(nSW).Ref_PeakInd - win ...
+                    : SW(nSW).Ref_PeakInd + win), 1);
+            % use mean of all canonical waves
+            else
+                refData = mean(Data.SWRef(:, SW(nSW).Ref_PeakInd - win ...
+                    : SW(nSW).Ref_PeakInd + win), 1);
+            end
 
             % cross correlate with the reference channel
             cc = swa_xcorr(refData, shortData, win);
@@ -130,7 +142,7 @@ switch Info.Parameters.Channels_Detection
             
             % Minimum amplitude threshold (10% of maximum)
             % ````````````````````````````````````````````
-            SW(nSW).Channels_NegAmp = nan(length(Info.Electrodes),1);
+            SW(nSW).Channels_NegAmp = nan(Info.Recording.dataDim(1), 1);
             % TODO: make shortData only reflect the best correlating
             % portion as currently it could find another negative peak to
             % test minimum amp that doesn't correspond to peak of interest
@@ -187,11 +199,10 @@ switch Info.Parameters.Channels_Detection
             % eliminate the potentially false channels from the cluster test
             % in the negative amplitudes variable 
             SW(nSW).Channels_NegAmp(~Channels) = nan;
-
             
             % Delay Calculation
             % `````````````````
-            SW(nSW).Travelling_Delays = nan(length(Info.Electrodes),1);
+            SW(nSW).Travelling_Delays = nan(Info.Recording.dataDim(1),1);
             SW(nSW).Travelling_Delays(Channels)...
                 = maxID(Channels) - min(maxID(Channels));
             

@@ -31,21 +31,24 @@ switch type
         Info.Parameters.Ref_AmplitudeCriteria = 'relative'; % relative/absolute
         Info.Parameters.Ref_AmplitudeRelative = 5;         % Standard deviations from mean negativity
         Info.Parameters.Ref_AmplitudeAbsolute = 60;
+        Info.Parameters.Ref_AmplitudeMax = 250; % maximum amplitude in case of artefacts
         Info.Parameters.Ref_WaveLength = [0.25 1.25];      % Length criteria between zero crossings
         Info.Parameters.Ref_SlopeMin = 0.90;             % Percentage cut-off for slopes
         Info.Parameters.Ref_Peak2Peak = [];               % Only for channel thresholding
 
         % channel detection
         % ^^^^^^^^^^^^^^^^^        
+        Info.Parameters.Channels_Correlate2 = 'mean'; % which canonical wave (main, mean, or all)
         Info.Parameters.Channels_Detection = 'correlation'; % correlation/threshold
         Info.Parameters.Channels_Threshold = 0.9;             % amount to adjust threshold if using threshold method
         Info.Parameters.Channels_ClusterTest = true;
-        Info.Parameters.Channels_WinSize = 0.10;
+        Info.Parameters.Channels_WinSize = 0.100;
 
         % travelling parameters
         % ^^^^^^^^^^^^^^^^^^^^^        
         Info.Parameters.Travelling_GS = 40; % size of interpolation grid
         Info.Parameters.Travelling_MinDelay = 40; % minimum travel time (ms)
+        Info.Parameters.Travelling_RecalculateDelay = true; % set to false if delay maps are manually calculated outside of algorith (e.g. smoothing)
 
         % option specific defaults
         % ^^^^^^^^^^^^^^^^^^^^^^^^        
@@ -95,11 +98,12 @@ switch type
         
     case 'SS'
         
-        % Reference Parameters
+        % Reference / Canonical Parameters
         Info.Parameters.Ref_Method      = 'Midline';
         Info.Parameters.Ref_Electrodes = []; % logical array of electrodes used for each canonical
         Info.Parameters.Filter_Apply    = false; % No filter needed for CWT method...
-                
+        Info.Parameters.Ref_UseStages = []; % whether or not to use sleep scoring information
+            
         % Filter Parameters
         Info.Parameters.Filter_Method = 'Chebyshev';      % 'Chebyshev'/'Buttersworth'
         Info.Parameters.Filter_band = [10, 16];
@@ -108,6 +112,7 @@ switch type
         Info.Parameters.Filter_order = 2;
 
         Info.Parameters.Wavelet_name = 'fbsp1-1-3'; % b-spline wavelet; else use 'morl'
+        Info.Parameters.Wavelet_norm = 1; % normalise according to median entire time coefficients
         
         % Spindle Criteria       
         Info.Parameters.Ref_AmplitudeCriteria = 'relative'; % relative/absolute

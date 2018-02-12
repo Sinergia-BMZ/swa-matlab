@@ -97,6 +97,14 @@ set(handles.java.options_list(1),...
 % get the currently available options
 options_list = swa_wave_summary('return options');
 
+% eliminate options for spindle comparisons (no travelling parameters)
+if ~isfield(handles.dataset{1}, 'SW')
+    bad_options = ismember(options_list,...
+        {'distances', 'anglemap', 'topo_origins', ...
+        'topo_streams', 'topo_meandelay', 'topo_streamorigins'});
+    options_list(bad_options) = [];
+end
+
 % create and set the java models for the options list
 model1 = javax.swing.DefaultComboBoxModel(options_list);
 handles.java.options_list(1).setModel(model1);
@@ -302,8 +310,10 @@ for n = 1:length(info_fields)
         diff_count = diff_count +1;
         different_fields{diff_count, 1} = info_fields{n};
         temp = handles.dataset{1}.Info.Parameters.(info_fields{n});
-        if isa(temp, 'double') & numel(temp) > 1
+        if isa(temp, 'double') && numel(temp) > 1
             different_fields{diff_count, 2} = max(temp);
+        elseif isa(temp, 'logical') && numel(temp) > 1
+            different_fields{diff_count, 2} = length(temp);
         else
             different_fields{diff_count, 2} = temp;
         end
@@ -311,6 +321,8 @@ for n = 1:length(info_fields)
         temp = handles.dataset{2}.Info.Parameters.(info_fields{n});
         if isa(temp, 'double') & numel(temp) > 1
             different_fields{diff_count, 3} = max(temp);
+        elseif isa(temp, 'logical') && numel(temp) > 1
+            different_fields{diff_count, 2} = length(temp);
         else
             different_fields{diff_count, 3} = temp;
         end        
