@@ -273,7 +273,7 @@ switch Info.Parameters.Channels_Detection
             
             % Delay Calculation
             % Using negative peak id
-            SW(nSW).Travelling_Delays = nan(length(Info.Electrodes),1);
+            SW(nSW).Travelling_Delays = nan(Info.Recording.dataDim(1),1);
             SW(nSW).Travelling_Delays(SW(nSW).Channels_Active)...
                 = minChId(SW(nSW).Channels_Active) - min(minChId(SW(nSW).Channels_Active));
             
